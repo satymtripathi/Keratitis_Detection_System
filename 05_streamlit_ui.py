@@ -1,3 +1,54 @@
+import os
+import cv2
+import numpy as np
+import torch
+import torch.nn as nn
+from torchvision import models, transforms
+from torch import amp
+import math
+from PIL import Image
+from dataclasses import dataclass
+from typing import List, Tuple
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# Import expert utilities from the local directory
+from Limbus_Crop_Segmentation_System.inference_utils import load_model, predict_masks, postprocess_mask, largest_contour
+
+# =========================
+# CONFIG
+# =========================
+@dataclass
+class CFG:
+    SEG_CKPT: str  = r"Limbus_Crop_Segmentation_System\model_limbus_crop_unetpp_weighted.pth"
+    CLS_CKPT: str  = r"training_results\checkpoints\best.pth"
+
+    CLASSES: Tuple[str, ...] = ("Edema", "Scar", "Infection", "Normal")
+    CLASS_COLORS = {
+        "Edema": "#3498db",    # Blue
+        "Scar": "#9b59b6",     # Purple
+        "Infection": "#e74c3c", # Red
+        "Normal": "#2ecc71"    # Green
+    }
+
+    CANONICAL_SIZE: int = 512
+    TILE_SAVE_SIZE: int = 224
+    GLOBAL_SIZE: int = 384
+    TILE_SIZE: int = 224
+
+    POLAR_THETA: int = 8
+    POLAR_RINGS: int = 3
+    RING_EDGES_FRAC: Tuple[float, ...] = (0.0, 0.35, 0.70, 1.0)
+    POLAR_MIN_PIXELS: int = 150
+    POLAR_PAD: int = 2
+
+    TOPK_POOL: int = 4
+    QUALITY_BETA: float = 1.2
+
+cfg = CFG()
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 # =========================
 # MODEL ARCHITECTURE
 # =========================
@@ -114,25 +165,46 @@ def polar_tiles_matched(masked_512, mask01_512):
             tiles.append(tile_res); q.append(tile_quality_score(tile_res))
     return tiles, np.array(q, dtype=np.float32)
 
+def draw_premium_targeting(bgr, crop_mask, limbus_mask):
+    vis = bgr.copy()
+    crop_mask = postprocess_mask(crop_mask, kernel=9)
+    limbus_mask = postprocess_mask(limbus_mask, kernel=7)
+    c_crop = largest_contour(crop_mask)
+    c_limb = largest_contour(limbus_mask)
+    if c_crop is not None:
+        x, y, w, h = cv2.boundingRect(c_crop)
+        cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 255, 255), 4) # Yellow
+    if c_limb is not None:
+        if len(c_limb) >= 50:
+            ellipse = cv2.fitEllipse(c_limb)
+            dark = tuple(int(c * 0.35) for c in (255, 255, 0))
+            cv2.ellipse(vis, ellipse, dark, 8)
+            cv2.ellipse(vis, ellipse, (255, 255, 0), 3) # Cyan
+        else:
+            cv2.drawContours(vis, [c_limb], -1, (255, 255, 0), 3)
+    return vis
+
 # =========================
 # STREAMLIT UI
 # =========================
 
-st.set_page_config(page_title="KeratitisAI - Diagnostic System", layout="wide", page_icon="👁️")
+st.set_page_config(page_title="KeratitisAI - Expert System", layout="wide", page_icon="👁️")
 
 # CSS and Styling
 st.markdown("""
 <style>
-    .main { background-color: #f8f9fa; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .prediction-card { padding: 20px; border-radius: 15px; text-align: center; color: white; font-weight: bold; font-size: 24px; margin-bottom: 20px; }
+    .main { background-color: #f0f2f6; }
+    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+    .status-card { padding: 24px; border-radius: 16px; text-align: center; color: white; font-weight: 800; font-size: 32px; margin-bottom: 24px; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+    .stButton>button { border-radius: 10px; height: 3em; width: 100%; font-weight: bold; background-color: #007bff; color: white; }
+    .sidebar .sidebar-content { background-image: linear-gradient(#2e7bcf,#2e7bcf); color: white; }
 </style>
 """, unsafe_allow_html=True)
 
 @st.cache_resource
 def load_all_models():
     # Segmentation
-    model_s, _, idx_l, img_s = load_model(cfg.SEG_CKPT, DEVICE)
+    model_s, idx_c, idx_l, img_s = load_model(cfg.SEG_CKPT, DEVICE)
     model_s.eval()
     # Classification
     ckpt = torch.load(cfg.CLS_CKPT, map_location=DEVICE)
@@ -140,62 +212,68 @@ def load_all_models():
     model_c = DualBranchMIL(len(cfg.CLASSES), cfg.TOPK_POOL, cfg.QUALITY_BETA)
     model_c.load_state_dict(sd, strict=True)
     model_c.float().to(DEVICE).eval()
-    return model_s, idx_l, img_s, model_c
+    return model_s, idx_c, idx_l, img_s, model_c
 
 try:
-    with st.spinner("Loading Expert Models..."):
-        seg_model, idx_limbus, img_size, clf_model = load_all_models()
+    with st.spinner("Initializing Deep Learning Engine..."):
+        seg_model, idx_crop, idx_limbus, img_size, clf_model = load_all_models()
 except Exception as e:
-    st.error(f"Error loading models: {e}. Ensure checkpoints are in 'training_results' and 'Limbus_Crop_Segmentation_System'.")
+    st.error(f"Initialization Failed: {e}. Please check paths: '{cfg.SEG_CKPT}' and '{cfg.CLS_CKPT}'")
     st.stop()
 
 # Transforms
 tile_tf = transforms.Compose([transforms.ToPILImage(), transforms.Resize((cfg.TILE_SIZE, cfg.TILE_SIZE)), transforms.ToTensor(), transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])])
 global_tf = transforms.Compose([transforms.ToPILImage(), transforms.Resize((cfg.GLOBAL_SIZE, cfg.GLOBAL_SIZE)), transforms.ToTensor(), transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])])
 
-st.title("👁️ Keratitis Detection System")
-st.markdown("Advanced Multi-Instance Learning for Ocular Condition Classification")
+st.title("�️ KeratitisAI Diagnostic Dashboard")
+st.markdown("Professional-grade Multi-Branch Multiple Instance Learning for Keratitis classification.")
 
 # Sidebar
-st.sidebar.header("📂 Analysis Controls")
-uploaded_file = st.sidebar.file_uploader("Upload Slit Lamp Image", type=["jpg", "jpeg", "png"])
-topk_val = st.sidebar.slider("Top-K Attention Tiles", 1, 8, 4)
-quality_beta = st.sidebar.slider("Quality Sensitivity (Beta)", 0.0, 2.0, 1.2)
+st.sidebar.title("🩺 Clinical Control")
+uploaded_file = st.sidebar.file_uploader("Upload Slit Lamp Photography", type=["jpg", "jpeg", "png"])
+st.sidebar.divider()
+st.sidebar.subheader("Parameters")
+topk_val = st.sidebar.slider("Attention Top-K", 1, 12, 4)
+quality_beta = st.sidebar.slider("Quality Bias (λ)", 0.0, 3.0, 1.2, step=0.1)
 
 if uploaded_file:
     # 1. Load and Prep
     image = Image.open(uploaded_file).convert("RGB")
     bgr_orig = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    H_orig, W_orig = bgr_orig.shape[:2]
     
     # 2. Segment
-    bgr_512 = cv2.resize(bgr_orig, (cfg.CANONICAL_SIZE, cfg.CANONICAL_SIZE))
-    masks = predict_masks(seg_model, bgr_512, img_size, DEVICE)
-    mask01 = (masks[idx_limbus] > 0.5).astype(np.uint8)
-    if mask01.shape[:2] != (cfg.CANONICAL_SIZE, cfg.CANONICAL_SIZE):
-        mask01 = cv2.resize(mask01, (cfg.CANONICAL_SIZE, cfg.CANONICAL_SIZE), interpolation=cv2.INTER_NEAREST)
-    
-    rgb_512 = cv2.cvtColor(bgr_512, cv2.COLOR_BGR2RGB)
-    masked_512 = rgb_512.copy()
-    masked_512[mask01 == 0] = 0
-    
+    with st.spinner("Analyzing anatomical structures..."):
+        masks = predict_masks(seg_model, bgr_orig, img_size, DEVICE)
+        m_crop = masks[idx_crop]
+        m_limb = masks[idx_limbus]
+        
+        # Prepare 512px view for inference
+        bgr_512 = cv2.resize(bgr_orig, (cfg.CANONICAL_SIZE, cfg.CANONICAL_SIZE))
+        mask_512 = cv2.resize(m_limb, (cfg.CANONICAL_SIZE, cfg.CANONICAL_SIZE), interpolation=cv2.INTER_NEAREST)
+        
+        rgb_512 = cv2.cvtColor(bgr_512, cv2.COLOR_BGR2RGB)
+        masked_512 = rgb_512.copy()
+        masked_512[mask_512 == 0] = 0
+        
+        # Premium Visualization
+        premium_vis = draw_premium_targeting(bgr_orig, m_crop, m_limb)
+        premium_vis_rgb = cv2.cvtColor(premium_vis, cv2.COLOR_BGR2RGB)
+
     # 3. Tiling
-    tiles_224, q = polar_tiles_matched(masked_512, mask01)
+    tiles_224, q = polar_tiles_matched(masked_512, mask_512)
     
-    col_main, col_res = st.columns([1.5, 1])
+    col_main, col_res = st.columns([1.6, 1])
 
     with col_main:
-        st.subheader("Clinical Visualizations")
-        # Mask overlay
-        ov = rgb_512.copy()
-        ov[mask01.astype(bool)] = (0.6 * ov[mask01.astype(bool)] + 0.4 * np.array([0, 255, 0])).astype(np.uint8)
-        
-        tabs = st.tabs(["Input", "Targeting (Limbus)", "Feature Map (Precompute)"])
-        tabs[0].image(image, use_container_width=True)
-        tabs[1].image(ov, use_container_width=True, caption="Green: Detected Limbus Region")
-        tabs[2].image(masked_512, use_container_width=True, caption="512px Masked Canonical View")
+        st.subheader("Anatomical Visualization")
+        tabs = st.tabs(["Diagnostic Overlay", "Raw Signal", "Targeted Region"])
+        tabs[0].image(premium_vis_rgb, use_container_width=True, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
+        tabs[1].image(image, use_container_width=True, caption="Original Photography")
+        tabs[2].image(masked_512, use_container_width=True, caption="Processed 512px MIL Global Signal")
 
     if len(tiles_224) > 0:
-        # Prepare Tensors
+        # Prepare Tensors (MIL expects fixed batch or padded bag)
         T_MAX = 24
         tiles_pad = tiles_224[:T_MAX]
         q_pad = q[:T_MAX]
@@ -221,33 +299,44 @@ if uploaded_file:
         conf = probs[pred_id]
         
         with col_res:
-            st.subheader("Diagnostic Report")
+            st.subheader("Diagnostic Status")
             bg_color = cfg.CLASS_COLORS.get(pred_label, "#34495e")
-            st.markdown(f'<div class="prediction-card" style="background-color: {bg_color};">{pred_label} ({(conf*100):.1f}%)</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="status-card" style="background-color: {bg_color};">{pred_label.upper()}</div>', unsafe_allow_html=True)
             
-            # Metric scores
-            m1, m2 = st.columns(2)
-            m1.metric("Confidence", f"{conf:.2%}")
-            m2.metric("Tiles Selected", topk_val)
+            # Metrics
+            m_a, m_b = st.columns(2)
+            m_a.metric("Certainty", f"{(conf*100):.1f}%")
+            m_b.metric("Attention Top-K", topk_val)
             
             # Probability Chart
-            prob_df = pd.DataFrame({"Condition": cfg.CLASSES, "Probability": probs})
-            fig = px.bar(prob_df, x="Probability", y="Condition", orientation='h', color="Condition",
-                         color_discrete_map=cfg.CLASS_COLORS, text_auto='.2%', range_x=[0,1])
-            fig.update_layout(showlegend=False, height=300, margin=dict(l=0,r=0,t=0,b=0))
+            st.markdown("---")
+            st.subheader("Classification Score")
+            prob_df = pd.DataFrame({"Condition": cfg.CLASSES, "Confidence": probs})
+            fig = px.bar(prob_df, x="Confidence", y="Condition", orientation='h', color="Condition",
+                         color_discrete_map=cfg.CLASS_COLORS, text_auto='.1%', range_x=[0,1])
+            fig.update_layout(showlegend=False, height=280, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-        st.subheader("Critical Diagnostic Features (Attention-Weighted Tiles)")
+        st.subheader("👁️ AI Attention Map (Clinical Hotspots)")
+        st.markdown(f"The model identifies these areas as most critical for the diagnosis of **{pred_label}**.")
+        
         top_indices = top_idx[0].cpu().numpy().tolist()
-        cols = st.columns(4)
-        for i, idx in enumerate(top_indices[:4]):
-            with cols[i]:
-                st.image(tiles_pad[idx], caption=f"Rank {i+1} | Score: {att[0, idx]:.3f}", use_container_width=True)
+        cols_att = st.columns(min(len(top_indices), 4))
+        for i, idx in enumerate(top_indices[:len(cols_att)]):
+            with cols_att[i]:
+                st.image(tiles_pad[idx], caption=f"Hotspot Rank {i+1} (Score: {att[0, idx]:.3f})", use_container_width=True)
+                
     else:
-        st.warning("⚠️ Limbus not clearly detected. Please ensure the eye is centered and slit-lamp is focused.")
+        st.warning("⚠️ Limbus segmentation yielded no valid features. Prediction may be unreliable.")
 
 else:
-    # Landing Page
-    st.info("Please upload a slit lamp eye image from the sidebar to begin analysis.")
-    st.image("https://img.freepik.com/free-vector/eye-diagnostics-medical-poster_1284-18341.jpg", width=400) # Placeholder for landing
+    # Portfolio Style Landing
+    st.image("https://images.unsplash.com/photo-1576091160550-217359f4ecf8?auto=format&fit=crop&q=80&w=2070", use_container_width=True)
+    st.info("System Ready. Please upload a clinical image to proceed with automated Keratitis detection.")
+    st.markdown("""
+    ### About this System
+    - **Dual-Branch Architecture**: Combines global ocular context with high-resolution localized tiling.
+    - **Gated Attention MIL**: Learns to distinguish between noisy patches and critical diagnostic indicators.
+    - **Expert Segmentation**: Hard-coded anatomical priors ensure the AI focuses on the relevant corneal surface.
+    """)
