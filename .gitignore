@@ -18,9 +18,8 @@ DatasetSatyam_Precomputed/
 input_images/
 inference_output/
 
-# Model Checkpoints (optional, push if needed but ignore large ones)
-# training_results/ # Uncomment if you don't want to push training results
-*.pth
+# Model Checkpoints (Using Git LFS)
+# *.pth 
 
 # IDEs
 .vscode/
