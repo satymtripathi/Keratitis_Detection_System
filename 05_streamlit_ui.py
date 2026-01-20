@@ -195,7 +195,7 @@ st.markdown("""
 <style>
     .main { background-color: #f0f2f6; }
     .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-    .status-card { padding: 12px; border-radius: 12px; text-align: center; color: white; font-weight: 700; font-size: 22px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .status-card { padding: 6px; border-radius: 10px; text-align: center; color: white; font-weight: 700; font-size: 16px; margin-bottom: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: fit-content; margin-left: auto; margin-right: auto; min-width: 150px; }
     .stButton>button { border-radius: 10px; height: 3em; width: 100%; font-weight: bold; background-color: #007bff; color: white; }
     .sidebar .sidebar-content { background-image: linear-gradient(#2e7bcf,#2e7bcf); color: white; }
 </style>
@@ -233,7 +233,7 @@ st.sidebar.title("🩺 Clinical Control")
 uploaded_file = st.sidebar.file_uploader("Upload Slit Lamp Photography", type=["jpg", "jpeg", "png"])
 st.sidebar.divider()
 st.sidebar.subheader("Parameters")
-topk_val = st.sidebar.slider("Attention Top-K", 1, 12, 4)
+topk_val = st.sidebar.slider("Attention Top-Slices", 1, 12, 4)
 quality_beta = st.sidebar.slider("Quality Bias (λ)", 0.0, 3.0, 1.2, step=0.1)
 
 if uploaded_file:
@@ -332,7 +332,7 @@ if uploaded_file:
             st.markdown(tbl_html, unsafe_allow_html=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
-            st.metric("Top-K Attention Tiles", topk_val)
+            st.metric("Top-Slices Analyzed", topk_val)
 
         st.divider()
         st.subheader("👁️ AI Attention Map (Clinical Hotspots)")
@@ -354,7 +354,7 @@ else:
     st.info("System Ready. Please upload a clinical image to proceed with automated Keratitis detection.")
     st.markdown("""
     ### About this System
-    - **Dual-Branch Architecture**: Combines global ocular context with high-resolution localized tiling.
+    - **Dual-Branch Architecture**: Combines global ocular context with high-resolution localized Slice.
     - **Gated Attention MIL**: Learns to distinguish between noisy patches and critical diagnostic indicators.
     - **Expert Segmentation**: Hard-coded anatomical priors ensure the AI focuses on the relevant corneal surface.
     """)
