@@ -195,7 +195,7 @@ st.markdown("""
 <style>
     .main { background-color: #f0f2f6; }
     .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-    .status-card { padding: 4px 10px; border-radius: 8px; text-align: center; color: white; font-weight: 600; font-size: 13px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: fit-content; margin-left: auto; margin-right: auto; min-width: 100px; line-height: 1.2; }
+    .status-card { padding: 6px 12px; border-radius: 10px; text-align: center; color: white; font-weight: 700; font-size: 18px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: fit-content; margin-left: auto; margin-right: auto; min-width: 140px; }
     .stButton>button { border-radius: 10px; height: 3em; width: 100%; font-weight: bold; background-color: #007bff; color: white; }
     .sidebar .sidebar-content { background-image: linear-gradient(#2e7bcf,#2e7bcf); color: white; }
 </style>
