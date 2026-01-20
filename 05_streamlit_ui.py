@@ -263,14 +263,15 @@ if uploaded_file:
     # 3. Tiling
     tiles_224, q = polar_tiles_matched(masked_512, mask_512)
     
-    col_main, col_res = st.columns([1.6, 1])
+    col_main, col_res = st.columns([1.2, 1])
 
     with col_main:
         st.subheader("Anatomical Visualization")
         tabs = st.tabs(["Diagnostic Overlay", "Raw Signal", "Targeted Region"])
-        tabs[0].image(premium_vis_rgb, use_container_width=True, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
-        tabs[1].image(image, use_container_width=True, caption="Original Photography")
-        tabs[2].image(masked_512, use_container_width=True, caption="Processed 512px MIL Global Signal")
+        # Set width to 600px for a "normal" size display
+        tabs[0].image(premium_vis_rgb, width=600, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
+        tabs[1].image(image, width=600, caption="Original Photography")
+        tabs[2].image(masked_512, width=600, caption="Processed 512px MIL Global Signal")
 
     if len(tiles_224) > 0:
         # Prepare Tensors (MIL expects fixed batch or padded bag)
@@ -303,29 +304,34 @@ if uploaded_file:
             bg_color = cfg.CLASS_COLORS.get(pred_label, "#34495e")
             st.markdown(f'<div class="status-card" style="background-color: {bg_color};">{pred_label.upper()}</div>', unsafe_allow_html=True)
             
-            # Metrics
-            m_a, m_b = st.columns(2)
-            m_a.metric("Certainty", f"{(conf*100):.1f}%")
-            m_b.metric("Attention Top-K", topk_val)
+            # Metrics in table format for beauty
+            st.markdown("### Confidence Analysis")
             
-            # Probability Chart
-            st.markdown("---")
-            st.subheader("Classification Score")
-            prob_df = pd.DataFrame({"Condition": cfg.CLASSES, "Confidence": probs})
-            fig = px.bar(prob_df, x="Confidence", y="Condition", orientation='h', color="Condition",
-                         color_discrete_map=cfg.CLASS_COLORS, text_auto='.1%', range_x=[0,1])
-            fig.update_layout(showlegend=False, height=280, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig, use_container_width=True)
+            # Create a styled dataframe
+            prob_df = pd.DataFrame({
+                "Condition": cfg.CLASSES,
+                "Probability": [f"{(p*100):.2f}%" for p in probs]
+            })
+            
+            # Custom styling for the table
+            def highlight_max(s):
+                is_max = s == f"{(conf*100):.2f}%"
+                return ['background-color: #d4edda; font-weight: bold' if is_max else '' for v in s]
+
+            st.table(prob_df)
+            
+            st.metric("Top-K Attention Tiles", topk_val)
 
         st.divider()
         st.subheader("👁️ AI Attention Map (Clinical Hotspots)")
         st.markdown(f"The model identifies these areas as most critical for the diagnosis of **{pred_label}**.")
         
         top_indices = top_idx[0].cpu().numpy().tolist()
-        cols_att = st.columns(min(len(top_indices), 4))
-        for i, idx in enumerate(top_indices[:len(cols_att)]):
+        cols_att = st.columns(4)
+        for i, idx in enumerate(top_indices[:4]):
             with cols_att[i]:
-                st.image(tiles_pad[idx], caption=f"Hotspot Rank {i+1} (Score: {att[0, idx]:.3f})", use_container_width=True)
+                # Small tiles for hotspots
+                st.image(tiles_pad[idx], caption=f"Rank {i+1} ({att[0, idx]:.3f})", width=180)
                 
     else:
         st.warning("⚠️ Limbus segmentation yielded no valid features. Prediction may be unreliable.")
