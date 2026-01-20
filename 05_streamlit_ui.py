@@ -195,7 +195,7 @@ st.markdown("""
 <style>
     .main { background-color: #f0f2f6; }
     .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-    .status-card { padding: 24px; border-radius: 16px; text-align: center; color: white; font-weight: 800; font-size: 32px; margin-bottom: 24px; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+    .status-card { padding: 12px; border-radius: 12px; text-align: center; color: white; font-weight: 700; font-size: 22px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     .stButton>button { border-radius: 10px; height: 3em; width: 100%; font-weight: bold; background-color: #007bff; color: white; }
     .sidebar .sidebar-content { background-image: linear-gradient(#2e7bcf,#2e7bcf); color: white; }
 </style>
@@ -225,7 +225,7 @@ except Exception as e:
 tile_tf = transforms.Compose([transforms.ToPILImage(), transforms.Resize((cfg.TILE_SIZE, cfg.TILE_SIZE)), transforms.ToTensor(), transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])])
 global_tf = transforms.Compose([transforms.ToPILImage(), transforms.Resize((cfg.GLOBAL_SIZE, cfg.GLOBAL_SIZE)), transforms.ToTensor(), transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])])
 
-st.title("�️ KeratitisAI Diagnostic Dashboard")
+st.title("🛡️ KeratitisAI Diagnostic Dashboard")
 st.markdown("Professional-grade Multi-Branch Multiple Instance Learning for Keratitis classification.")
 
 # Sidebar
@@ -268,10 +268,10 @@ if uploaded_file:
     with col_main:
         st.subheader("Anatomical Visualization")
         tabs = st.tabs(["Diagnostic Overlay", "Raw Signal", "Targeted Region"])
-        # Set width to 600px for a "normal" size display
-        tabs[0].image(premium_vis_rgb, width=600, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
-        tabs[1].image(image, width=600, caption="Original Photography")
-        tabs[2].image(masked_512, width=600, caption="Processed 512px MIL Global Signal")
+        # User preference: width 250px
+        tabs[0].image(premium_vis_rgb, width=250, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
+        tabs[1].image(image, width=250, caption="Original Photography")
+        tabs[2].image(masked_512, width=250, caption="Processed 512px MIL Global Signal")
 
     if len(tiles_224) > 0:
         # Prepare Tensors (MIL expects fixed batch or padded bag)
@@ -307,19 +307,31 @@ if uploaded_file:
             # Metrics in table format for beauty
             st.markdown("### Confidence Analysis")
             
-            # Create a styled dataframe
-            prob_df = pd.DataFrame({
-                "Condition": cfg.CLASSES,
-                "Probability": [f"{(p*100):.2f}%" for p in probs]
-            })
+            # Build Styled HTML Table
+            tbl_html = """
+            <table style="width:100%; border-collapse: collapse; font-family: sans-serif;">
+                <tr style="background-color: #f2f2f2;">
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Condition</th>
+                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Probability</th>
+                </tr>
+            """
+            for i, cls in enumerate(cfg.CLASSES):
+                p_str = f"{(probs[i]*100):.2f}%"
+                is_pred = (i == pred_id)
+                bg = "#d4edda" if is_pred else "white"
+                weight = "800" if is_pred else "400"
+                color = cfg.CLASS_COLORS[cls] if is_pred else "#333"
+                
+                tbl_html += f"""
+                <tr style="background-color: {bg}; font-weight: {weight};">
+                    <td style="padding: 8px; border: 1px solid #ddd; color: {color};">{cls} {" (Predicted)" if is_pred else ""}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">{p_str}</td>
+                </tr>
+                """
+            tbl_html += "</table>"
+            st.markdown(tbl_html, unsafe_allow_html=True)
             
-            # Custom styling for the table
-            def highlight_max(s):
-                is_max = s == f"{(conf*100):.2f}%"
-                return ['background-color: #d4edda; font-weight: bold' if is_max else '' for v in s]
-
-            st.table(prob_df)
-            
+            st.markdown("<br>", unsafe_allow_html=True)
             st.metric("Top-K Attention Tiles", topk_val)
 
         st.divider()
