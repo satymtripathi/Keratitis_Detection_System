@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (often large)
+DatasetSatyam/
+DatasetSatyam_Precomputed/
+input_images/
+inference_output/
+
+# Model Checkpoints (optional, push if needed but ignore large ones)
+# training_results/ # Uncomment if you don't want to push training results
+*.pth
+
+# IDEs
+.vscode/
+.idea/
