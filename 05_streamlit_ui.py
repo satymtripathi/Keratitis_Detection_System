@@ -141,15 +141,15 @@ def normalize01(arr: np.ndarray) -> np.ndarray:
 def polar_tiles_matched(masked_512, mask01_512):
     H, W = mask01_512.shape
     ys, xs = np.where(mask01_512 > 0)
-    if len(xs) == 0: return [], np.zeros((0,))
+    if len(xs) == 0: return [], np.zeros((0,)), []
     cx, cy = float(xs.mean()), float(ys.mean())
     rmax = float(np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2).max())
-    if rmax < 5: return [], np.zeros((0,))
+    if rmax < 5: return [], np.zeros((0,)), []
     yy, xx = np.mgrid[0:H, 0:W]
     rr = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
     tt = (np.arctan2(yy - cy, xx - cx) + 2 * np.pi) % (2 * np.pi)
     ring_edges = [f * rmax for f in cfg.RING_EDGES_FRAC]
-    tiles, q = [], []
+    tiles, q, coords = [], [], []
     for r in range(cfg.POLAR_RINGS):
         for s in range(cfg.POLAR_THETA):
             t0, t1 = 2 * np.pi * s / cfg.POLAR_THETA, 2 * np.pi * (s + 1) / cfg.POLAR_THETA
@@ -162,8 +162,10 @@ def polar_tiles_matched(masked_512, mask01_512):
             tile = masked_512[y0:y1 + 1, x0:x1 + 1].copy()
             tile[wedge[y0:y1 + 1, x0:x1 + 1] == 0] = 0
             tile_res = cv2.resize(tile, (cfg.TILE_SAVE_SIZE, cfg.TILE_SAVE_SIZE), interpolation=cv2.INTER_AREA)
-            tiles.append(tile_res); q.append(tile_quality_score(tile_res))
-    return tiles, np.array(q, dtype=np.float32)
+            tiles.append(tile_res)
+            q.append(tile_quality_score(tile_res))
+            coords.append((x0, y0, x1, y1))
+    return tiles, np.array(q, dtype=np.float32), coords
 
 # =========================
 # STREAMLIT UI
@@ -240,15 +242,17 @@ if uploaded_file:
         
 
     # 3. Tiling
-    tiles_224, q = polar_tiles_matched(masked_512, mask_512)
+    tiles_224, q, tile_coords = polar_tiles_matched(masked_512, mask_512)
     
     col_main, col_res = st.columns([1.2, 1])
 
     with col_main:
         st.subheader("Anatomical Visualization")
-        tabs = st.tabs(["Raw Signal", "Targeted Region"])
-        # User preference: width 250px
-        tabs[0].image(image, width=250, caption="Original Photography")
+        # Tabs for Raw Signal and Targeted
+        tab_list = ["Raw Signal", "Library of Slices", "Targeted Region"]
+        tabs = st.tabs(tab_list)
+        
+        # We need attention results to draw on Raw Signal, so we'll fill tabs after model run
         tabs[1].image(masked_512, width=250, caption="Processed 512px MIL Global Signal")
 
     if len(tiles_224) > 0:
@@ -277,6 +281,36 @@ if uploaded_file:
         pred_label = cfg.CLASSES[pred_id]
         conf = probs[pred_id]
         
+        # --- DRAW ATTENTION ON RAW SIGNAL ---
+        # Scale coords from 512 back to original image size
+        sx, sy = W_orig / cfg.CANONICAL_SIZE, H_orig / cfg.CANONICAL_SIZE
+        att_vis = bgr_orig.copy()
+        
+        top_indices = top_idx[0].cpu().numpy().tolist()
+        for idx in top_indices:
+            x0, y0, x1, y1 = tile_coords[idx]
+            # Convert to original scale
+            ox0, oy0, ox1, oy1 = int(x0*sx), int(y0*sy), int(x1*sx), int(y1*sy)
+            cv2.rectangle(att_vis, (ox0, oy0), (ox1, oy1), (0, 0, 255), 6) # Thick Red Square
+        
+        att_vis_rgb = cv2.cvtColor(att_vis, cv2.COLOR_BGR2RGB)
+        
+        # Fill Tabs
+        tabs[0].image(att_vis_rgb, width=250, caption="Raw Signal + AI Attention (Red)")
+        
+        with tabs[1]:
+            st.markdown("#### Library of Cumulative Polar Slices")
+            st.markdown(f"Displaying {len(tiles_224)} extracted anatomical slices used for MIL bagging.")
+            cols_grid = st.columns(6)
+            for i, slice_img in enumerate(tiles_224):
+                with cols_grid[i % 6]:
+                    # Border if top-K
+                    is_top = i in top_indices
+                    border_css = "border: 3px solid red;" if is_top else ""
+                    st.image(slice_img, caption=f"S{i+1}" + (" ⭐" if is_top else ""), use_container_width=True)
+        
+        tabs[2].image(masked_512, width=250, caption="Processed 512px MIL Global Signal")
+
         with col_res:
             st.subheader("Diagnostic Status")
             bg_color = cfg.CLASS_COLORS.get(pred_label, "#34495e")
