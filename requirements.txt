@@ -10,3 +10,5 @@ gradio
 scikit-learn
 matplotlib
 pillow
+streamlit
+plotly

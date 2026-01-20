@@ -42,7 +42,11 @@ Run predictions on a folder of images and sort them.
 - Configure `INPUT_DIR` and `CLS_CKPT` in `03_inference_batch.py`.
 - Run: `python 03_inference_batch.py`
 
-### Step 4: Real-time UI
+### Step 4: Real-time UI (Gradio)
 Launch the Gradio interface for interactive testing.
 - Ensure `CLS_CKPT` points to your trained `best.pth`.
 - Run: `python 04_inference_ui.py`
+
+### Step 5: Premium Dashboard (Streamlit)
+Launch the expert diagnostic dashboard for high-resolution analysis.
+- Run: `streamlit run 05_streamlit_ui.py`
