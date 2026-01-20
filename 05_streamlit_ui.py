@@ -281,22 +281,15 @@ if uploaded_file:
         pred_label = cfg.CLASSES[pred_id]
         conf = probs[pred_id]
         
-        # --- DRAW ATTENTION ON RAW SIGNAL ---
-        # Scale coords from 512 back to original image size
-        sx, sy = W_orig / cfg.CANONICAL_SIZE, H_orig / cfg.CANONICAL_SIZE
-        att_vis = bgr_orig.copy()
-        
+        # --- DRAW ATTENTION ON TARGETED REGION (512px) ---
+        target_att_vis = masked_512.copy()
         top_indices = top_idx[0].cpu().numpy().tolist()
         for idx in top_indices:
             x0, y0, x1, y1 = tile_coords[idx]
-            # Convert to original scale
-            ox0, oy0, ox1, oy1 = int(x0*sx), int(y0*sy), int(x1*sx), int(y1*sy)
-            cv2.rectangle(att_vis, (ox0, oy0), (ox1, oy1), (0, 0, 255), 6) # Thick Red Square
-        
-        att_vis_rgb = cv2.cvtColor(att_vis, cv2.COLOR_BGR2RGB)
+            cv2.rectangle(target_att_vis, (x0, y0), (x1, y1), (255, 0, 0), 4) # Red Square on Targeted Region
         
         # Fill Tabs
-        tabs[0].image(att_vis_rgb, width=250, caption="Raw Signal + AI Attention (Red)")
+        tabs[0].image(image, width=250, caption="Raw Signal (Input Photography)")
         
         with tabs[1]:
             st.markdown("#### Library of Cumulative Polar Slices")
@@ -304,12 +297,10 @@ if uploaded_file:
             cols_grid = st.columns(6)
             for i, slice_img in enumerate(tiles_224):
                 with cols_grid[i % 6]:
-                    # Border if top-K
                     is_top = i in top_indices
-                    border_css = "border: 3px solid red;" if is_top else ""
                     st.image(slice_img, caption=f"S{i+1}" + (" ⭐" if is_top else ""), use_container_width=True)
         
-        tabs[2].image(masked_512, width=250, caption="Processed 512px MIL Global Signal")
+        tabs[2].image(target_att_vis, width=250, caption="Targeted Region + AI Attention (Red)")
 
         with col_res:
             st.subheader("Diagnostic Status")
