@@ -6,7 +6,7 @@ import torch.nn as nn
 from torchvision import models, transforms
 from torch import amp
 import math
-from PIL import Image
+from PIL import Image, ImageOps
 from dataclasses import dataclass
 from typing import List, Tuple
 import pandas as pd
@@ -165,25 +165,6 @@ def polar_tiles_matched(masked_512, mask01_512):
             tiles.append(tile_res); q.append(tile_quality_score(tile_res))
     return tiles, np.array(q, dtype=np.float32)
 
-def draw_premium_targeting(bgr, crop_mask, limbus_mask):
-    vis = bgr.copy()
-    crop_mask = postprocess_mask(crop_mask, kernel=9)
-    limbus_mask = postprocess_mask(limbus_mask, kernel=7)
-    c_crop = largest_contour(crop_mask)
-    c_limb = largest_contour(limbus_mask)
-    if c_crop is not None:
-        x, y, w, h = cv2.boundingRect(c_crop)
-        cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 255, 255), 4) # Yellow
-    if c_limb is not None:
-        if len(c_limb) >= 50:
-            ellipse = cv2.fitEllipse(c_limb)
-            dark = tuple(int(c * 0.35) for c in (255, 255, 0))
-            cv2.ellipse(vis, ellipse, dark, 8)
-            cv2.ellipse(vis, ellipse, (255, 255, 0), 3) # Cyan
-        else:
-            cv2.drawContours(vis, [c_limb], -1, (255, 255, 0), 3)
-    return vis
-
 # =========================
 # STREAMLIT UI
 # =========================
@@ -239,6 +220,7 @@ quality_beta = st.sidebar.slider("Quality Bias (λ)", 0.0, 3.0, 1.2, step=0.1)
 if uploaded_file:
     # 1. Load and Prep
     image = Image.open(uploaded_file).convert("RGB")
+    image = ImageOps.exif_transpose(image)
     bgr_orig = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     H_orig, W_orig = bgr_orig.shape[:2]
     
@@ -256,9 +238,6 @@ if uploaded_file:
         masked_512 = rgb_512.copy()
         masked_512[mask_512 == 0] = 0
         
-        # Premium Visualization
-        premium_vis = draw_premium_targeting(bgr_orig, m_crop, m_limb)
-        premium_vis_rgb = cv2.cvtColor(premium_vis, cv2.COLOR_BGR2RGB)
 
     # 3. Tiling
     tiles_224, q = polar_tiles_matched(masked_512, mask_512)
@@ -267,11 +246,10 @@ if uploaded_file:
 
     with col_main:
         st.subheader("Anatomical Visualization")
-        tabs = st.tabs(["Raw Signal", "Diagnostic Overlay", "Targeted Region"])
+        tabs = st.tabs(["Raw Signal", "Targeted Region"])
         # User preference: width 250px
         tabs[0].image(image, width=250, caption="Original Photography")
-        tabs[1].image(premium_vis_rgb, width=250, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
-        tabs[2].image(masked_512, width=250, caption="Processed 512px MIL Global Signal")
+        tabs[1].image(masked_512, width=250, caption="Processed 512px MIL Global Signal")
 
     if len(tiles_224) > 0:
         # Prepare Tensors (MIL expects fixed batch or padded bag)
