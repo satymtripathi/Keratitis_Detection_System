@@ -267,10 +267,10 @@ if uploaded_file:
 
     with col_main:
         st.subheader("Anatomical Visualization")
-        tabs = st.tabs(["Diagnostic Overlay", "Raw Signal", "Targeted Region"])
+        tabs = st.tabs(["Raw Signal", "Diagnostic Overlay", "Targeted Region"])
         # User preference: width 250px
-        tabs[0].image(premium_vis_rgb, width=250, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
-        tabs[1].image(image, width=250, caption="Original Photography")
+        tabs[0].image(image, width=250, caption="Original Photography")
+        tabs[1].image(premium_vis_rgb, width=250, caption="Expert Model: Limbus (Cyan) & Crop ROI (Yellow)")
         tabs[2].image(masked_512, width=250, caption="Processed 512px MIL Global Signal")
 
     if len(tiles_224) > 0:
