@@ -21,8 +21,8 @@ from Limbus_Crop_Segmentation_System.inference_utils import load_model, predict_
 # =========================
 @dataclass
 class CFG:
-    SEG_CKPT: str  = r"Limbus_Crop_Segmentation_System\model_limbus_crop_unetpp_weighted.pth"
-    CLS_CKPT: str  = r"training_results\checkpoints\best.pth"
+    SEG_CKPT: str  = r"Limbus_Crop_Segmentation_System/model_limbus_crop_unetpp_weighted.pth"
+    CLS_CKPT: str  = r"training_results/checkpoints/best.pth"
 
     CLASSES: Tuple[str, ...] = ("Edema", "Scar", "Infection", "Normal")
     CLASS_COLORS = {
