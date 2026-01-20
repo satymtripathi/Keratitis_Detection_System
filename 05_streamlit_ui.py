@@ -195,7 +195,7 @@ st.markdown("""
 <style>
     .main { background-color: #f0f2f6; }
     .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-    .status-card { padding: 6px; border-radius: 10px; text-align: center; color: white; font-weight: 700; font-size: 16px; margin-bottom: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: fit-content; margin-left: auto; margin-right: auto; min-width: 150px; }
+    .status-card { padding: 4px 10px; border-radius: 8px; text-align: center; color: white; font-weight: 600; font-size: 13px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: fit-content; margin-left: auto; margin-right: auto; min-width: 100px; line-height: 1.2; }
     .stButton>button { border-radius: 10px; height: 3em; width: 100%; font-weight: bold; background-color: #007bff; color: white; }
     .sidebar .sidebar-content { background-image: linear-gradient(#2e7bcf,#2e7bcf); color: white; }
 </style>
@@ -307,29 +307,26 @@ if uploaded_file:
             # Metrics in table format for beauty
             st.markdown("### Confidence Analysis")
             
-            # Build Styled HTML Table
-            tbl_html = """
-            <table style="width:100%; border-collapse: collapse; font-family: sans-serif;">
+            # Build Styled HTML Table (Simplified to ensure rendering)
+            tbl_html = """<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">
                 <tr style="background-color: #f2f2f2;">
-                    <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Condition</th>
-                    <th style="padding: 10px; border: 1px solid #ddd; text-align: right;">Probability</th>
-                </tr>
-            """
+                    <th style="padding: 6px; border: 1px solid #ddd; text-align: left;">Condition</th>
+                    <th style="padding: 6px; border: 1px solid #ddd; text-align: right;">Probability</th>
+                </tr>"""
             for i, cls in enumerate(cfg.CLASSES):
-                p_str = f"{(probs[i]*100):.2f}%"
+                p_str = f"{(probs[i]*100):.1f}%"
                 is_pred = (i == pred_id)
-                bg = "#d4edda" if is_pred else "white"
-                weight = "800" if is_pred else "400"
+                bg = "#d4edda" if is_pred else "#ffffff"
+                weight = "700" if is_pred else "400"
                 color = cfg.CLASS_COLORS[cls] if is_pred else "#333"
                 
                 tbl_html += f"""
                 <tr style="background-color: {bg}; font-weight: {weight};">
-                    <td style="padding: 8px; border: 1px solid #ddd; color: {color};">{cls} {" (Predicted)" if is_pred else ""}</td>
-                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">{p_str}</td>
-                </tr>
-                """
+                    <td style="padding: 6px; border: 1px solid #ddd; color: {color};">{cls}{" (Pred)" if is_pred else ""}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd; text-align: right;">{p_str}</td>
+                </tr>"""
             tbl_html += "</table>"
-            st.markdown(tbl_html, unsafe_allow_html=True)
+            st.write(tbl_html, unsafe_allow_html=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
             st.metric("Top-Slices Analyzed", topk_val)
