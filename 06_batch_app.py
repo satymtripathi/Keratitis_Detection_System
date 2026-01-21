@@ -9,7 +9,6 @@ from PIL import Image, ImageOps
 from dataclasses import dataclass
 from typing import Tuple
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 # Import expert utilities from the local directory
@@ -187,15 +186,6 @@ def polar_tiles_matched(masked_512, mask01_512):
 # =========================
 st.set_page_config(page_title="KeratitisAI - Expert System", layout="wide", page_icon="👁️")
 
-st.markdown("""
-<style>
-    .main { background-color: #f0f2f6; }
-    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-    .status-card { padding: 6px 12px; border-radius: 10px; text-align: center; color: white; font-weight: 700; font-size: 18px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: fit-content; margin-left: auto; margin-right: auto; min-width: 140px; }
-    .stButton>button { border-radius: 10px; height: 3em; width: 100%; font-weight: bold; background-color: #007bff; color: white; }
-</style>
-""", unsafe_allow_html=True)
-
 @st.cache_resource
 def load_all_models():
     model_s, idx_c, idx_l, img_s = load_model(cfg.SEG_CKPT, DEVICE)
@@ -288,7 +278,7 @@ def run_one_image(pil_img: Image.Image, topk_val: int, quality_beta: float):
     }
 
 st.title("🛡️ KeratitisAI Diagnostic Dashboard")
-st.markdown("Professional-grade Multi-Branch Multiple Instance Learning for Keratitis classification.")
+st.markdown("Batch Keratitis classification using segmentation + polar tiles + MIL attention.")
 
 st.sidebar.title("🩺 Clinical Control")
 uploaded_files = st.sidebar.file_uploader(
@@ -305,10 +295,24 @@ show_details = st.sidebar.checkbox("Show per-image details (slower)", value=Fals
 if uploaded_files and len(uploaded_files) > 0:
     st.sidebar.success(f"{len(uploaded_files)} file(s) queued")
 
+    # ---- SHOW INPUT IMAGES BY NAME (GRID) ----
+    st.subheader("Uploaded Images")
+    cols = st.columns(6)
+    for i, uf in enumerate(uploaded_files):
+        with cols[i % 6]:
+            try:
+                img_preview = Image.open(uf)
+                st.image(img_preview, caption=uf.name, use_container_width=True)
+            except Exception:
+                st.write(uf.name)
+
+    st.divider()
+
+    # ---- RUN BATCH INFERENCE ----
     results = []
     st.subheader("Batch Results")
-
     pbar = st.progress(0.0)
+
     for i, uf in enumerate(uploaded_files):
         try:
             pil_img = Image.open(uf)
@@ -340,28 +344,26 @@ if uploaded_files and len(uploaded_files) > 0:
                         colA, colB = st.columns([1, 1])
 
                         with colA:
-                            st.image(pil_img, caption="Raw Input", use_container_width=True)
+                            st.image(pil_img, caption=f"Raw Input: {uf.name}", use_container_width=True)
 
                         with colB:
                             st.image(masked_512, caption="Masked Limbus (512px)", use_container_width=True)
 
-                        # Show top attention boxes on masked_512
+                        # Attention boxes on masked_512
                         target_att_vis = masked_512.copy()
                         top_indices = out["top_idx"]
-
-                        # Be safe if coords fewer than indices
                         for idx in top_indices:
                             if idx < len(out["tile_coords"]):
                                 x0, y0, x1, y1 = out["tile_coords"][idx]
                                 cv2.rectangle(target_att_vis, (x0, y0), (x1, y1), (255, 0, 0), 4)
-
                         st.image(target_att_vis, caption="Top-K Attention Regions (Red Boxes)", use_container_width=True)
 
                         st.markdown("**Top attention tiles**")
                         cols_att = st.columns(4)
                         for j, idx in enumerate(top_indices[:4]):
                             with cols_att[j]:
-                                st.image(out["tiles_224"][idx], caption=f"Rank {j+1}", use_container_width=True)
+                                if idx < len(out["tiles_224"]):
+                                    st.image(out["tiles_224"][idx], caption=f"Rank {j+1}", use_container_width=True)
 
         except Exception as e:
             results.append({
@@ -393,20 +395,5 @@ if uploaded_files and len(uploaded_files) > 0:
         mime="text/csv"
     )
 
-    st.subheader("Prediction Distribution")
-    fig = px.histogram(df, x="prediction")
-    st.plotly_chart(fig, use_container_width=True)
-
 else:
-    st.image(
-        "https://images.unsplash.com/photo-1576091160550-217359f4ecf8?auto=format&fit=crop&q=80&w=2070",
-        use_container_width=True
-    )
-    st.info("System Ready. Please upload clinical images to proceed with batch Keratitis detection.")
-    st.markdown("""
-    ### About this System
-    - **Dual-Branch Architecture**: Combines global ocular context with high-resolution localized Slice.
-    - **Gated Attention MIL**: Learns to distinguish between noisy patches and critical diagnostic indicators.
-    - **Expert Segmentation**: Anatomical priors ensure the AI focuses on relevant corneal surface.
-    """)
-
+    st.info("System Ready. Upload multiple clinical images to run batch Keratitis detection.")
